@@ -70,8 +70,7 @@ class HiveStreamDataWriter(
   }
 
   override def write(row: Row): Unit = withClassLoader {
-    // We assumed the type of partition column is String.
-    val partitionValues = partitionCols.map { col => row.getAs[String](col) }
+    val partitionValues = partitionCols.map { col => stringfyField(row.get(row.fieldIndex(col))) }
     val hiveEndPoint =
       Class.forName("org.apache.hive.hcatalog.streaming.HiveEndPoint", true, isolatedClassLoader)
       .getConstructor(classOf[String], classOf[String], classOf[String], classOf[JList[String]])
@@ -93,10 +92,10 @@ class HiveStreamDataWriter(
       getNewWriter()
     })
 
-    val jRow = Extraction.decompose(columnName.map { col => col -> row.getAs(col) }.toMap)
+    val jRow = Extraction.decompose(rowToMap(columnName, row))
     val jString = compact(render(jRow))
 
-    logDebug(s"Write JSON row ${pretty(render(jRow))} into Hive Streaming")
+    logInfo(s"Write JSON row ${pretty(render(jRow))} into Hive Streaming")
     writer.write(jString.getBytes("UTF-8"))
 
     if (writer.totalRecords() >= hiveOptions.batchSize) {
@@ -124,5 +123,34 @@ class HiveStreamDataWriter(
     executorService.shutdown()
 
     HiveStreamWriterCommitMessage
+  }
+
+  private def stringfyField(col: Any): String = {
+    col match {
+      case _: Array[Byte] =>
+        throw new UnsupportedOperationException("Cannot convert partition column with BinaryType " +
+          "to String")
+      case _: Seq[_] =>
+        throw new UnsupportedOperationException("Cannot convert partition column with ArrayType " +
+          "to String")
+      case _: Map[_, _] =>
+        throw new UnsupportedOperationException("Cannot convert partition column with MapType " +
+          "to String")
+      case _: Row =>
+        throw new UnsupportedOperationException("Cannot convert partition column with StructType " +
+          "to String")
+      case i => i.toString
+    }
+  }
+
+  private def rowToMap(columnName: Seq[String], row: Row): Map[String, Any] = {
+    columnName.map { col =>
+      val field = row.get(row.fieldIndex(col)) match {
+        case b: java.math.BigDecimal => new BigDecimal(b)
+        case r: Row => rowToMap(r.schema.map(_.name), r)
+        case e => e
+      }
+      col -> field
+    }.toMap
   }
 }
