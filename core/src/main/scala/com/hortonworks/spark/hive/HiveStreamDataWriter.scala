@@ -95,7 +95,7 @@ class HiveStreamDataWriter(
     val jRow = Extraction.decompose(rowToMap(columnName, row))
     val jString = compact(render(jRow))
 
-    logInfo(s"Write JSON row ${pretty(render(jRow))} into Hive Streaming")
+    logDebug(s"Write JSON row ${pretty(render(jRow))} into Hive Streaming")
     writer.write(jString.getBytes("UTF-8"))
 
     if (writer.totalRecords() >= hiveOptions.batchSize) {
@@ -105,9 +105,10 @@ class HiveStreamDataWriter(
   }
 
   override def abort(): Unit = withClassLoader {
-    inUseWriters.foreach { case (_, writer) =>
+    inUseWriters.foreach { case (key, writer) =>
       writer.abortTransaction()
       CachedHiveWriters.recycle(writer)
+      logDebug(s"Recycle writer $writer for $key to global cache")
     }
     inUseWriters.clear()
     executorService.shutdown()
@@ -117,7 +118,7 @@ class HiveStreamDataWriter(
     inUseWriters.foreach { case (key, writer) =>
       writer.commitTransaction()
       CachedHiveWriters.recycle(writer)
-      logDebug(s"Recycle writer $writer for $key in global cache")
+      logDebug(s"Recycle writer $writer for $key to global cache")
     }
     inUseWriters.clear()
     executorService.shutdown()

@@ -48,7 +48,7 @@ class HiveSourceProvider extends DataSourceV2 with StreamWriteSupport with DataS
         localHiveOptions.dbName, localHiveOptions.tableName)
     } catch {
       case e: Exception => throw new IllegalStateException("Cannot find destination table in " +
-        "metastore, please create table at first", e)
+        s"metastore, please create table ${localHiveOptions.tableName} at first", e)
     }
     val destSchema = destTable.schema
 
